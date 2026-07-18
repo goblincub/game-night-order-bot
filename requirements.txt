@@ -1,0 +1,2 @@
+# v1 needs only the Discord library. dd-cli is called as a subprocess, not imported.
+discord.py>=2.3,<3

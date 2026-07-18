@@ -1,0 +1,35 @@
+# --- Sensitive: participant data (spec §8) -----------------------------------
+# These hold real people's home addresses and order history. NEVER commit them.
+# Listed here in the first commit, before the files exist, on purpose.
+addresses.json
+addresses/
+*.addresses
+participants.json
+orders.db
+orders.sqlite
+orders.sqlite3
+*.db
+*.sqlite
+*.sqlite3
+placements.jsonl
+
+# --- Secrets ------------------------------------------------------------------
+.env
+.env.*
+*.token
+config.local.*
+
+# --- Python -------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# --- OS / editor --------------------------------------------------------------
+.DS_Store
+.idea/
+.vscode/
