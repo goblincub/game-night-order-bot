@@ -100,6 +100,8 @@ class Preview:
     total_cents: Optional[int]
     total_display: str
     fees: list[tuple[str, str]] = field(default_factory=list)  # (label, amount)
+    deliverable: bool = True   # False if DoorDash says the address is out of range
+    delivery_note: str = ""
 
 
 # --- addresses ----------------------------------------------------------------
@@ -237,8 +239,16 @@ def preview(cart_uuid: str) -> Preview:
     address = da.get("printable_address", "") if isinstance(da, dict) else ""
     store_name = (soc.get("store") or {}).get("name") or "?"
 
+    # Deliverability: DoorDash flags out-of-range addresses here.
+    avail = quote.get("delivery_availability") or {}
+    within_region = avail.get("is_within_delivery_region", True)
+    deliverable = bool(within_region)
+    delivery_note = "" if deliverable else "outside DoorDash delivery region"
+
     return Preview(
         cart_uuid=cart_uuid,
+        deliverable=deliverable,
+        delivery_note=delivery_note,
         store_name=store_name,
         items=items,
         delivery_address=address,
@@ -268,6 +278,13 @@ def submit(
 
     Callers MUST have shown `prev` to the owner and gotten an explicit yes first.
     """
+    # Gate 0: DoorDash must actually deliver here (catches e.g. cross-border).
+    if not prev.deliverable:
+        raise MoneyGateError(
+            f"DoorDash can't deliver this to {prev.delivery_address or 'the address'} "
+            f"({prev.delivery_note}) — refusing to place."
+        )
+
     # Gate 1: we must know the total. Unknown price -> refuse.
     if prev.total_cents is None:
         raise MoneyGateError("Could not read the order total from the preview — refusing to place.")

@@ -26,6 +26,7 @@ class PersonResult:
     total_display: str = "?"
     ok: bool = True
     placed: bool = False
+    deliverable: bool = True
     note: str = ""
 
 
@@ -55,6 +56,11 @@ def preview_all(people: list[Participant]) -> tuple[list[PersonResult], int]:
                 # Sanity: the preview address should be this person's address.
                 want = p.address_label.split(",")[0].strip()
                 mismatch = want and want not in prev.delivery_address
+                note = ""
+                if not prev.deliverable:
+                    note = f"🚫 {prev.delivery_note}"
+                elif mismatch:
+                    note = "⚠️ address mismatch"
                 results.append(
                     PersonResult(
                         name=p.name,
@@ -64,7 +70,8 @@ def preview_all(people: list[Participant]) -> tuple[list[PersonResult], int]:
                         total_cents=prev.total_cents,
                         total_display=prev.total_display,
                         ok=True,
-                        note="⚠️ address mismatch" if mismatch else "",
+                        deliverable=prev.deliverable,
+                        note=note,
                     )
                 )
                 grand += prev.total_cents or 0
@@ -93,7 +100,13 @@ def place_all(
     # 1) Price everything first (this restores the default itself).
     previews, grand = preview_all(people)
 
-    # 2) Cap checks up front — refuse the whole night if anything is over.
+    # 2a) Deliverability — refuse the whole night if anyone is out of range.
+    undeliverable = [r for r in previews if r.ok and not r.deliverable]
+    if undeliverable:
+        names = ", ".join(f"{r.name} ({r.note})" for r in undeliverable)
+        raise dd_cli.MoneyGateError(f"DoorDash can't deliver to: {names}. Nothing placed.")
+
+    # 2b) Cap checks up front — refuse the whole night if anything is over.
     over = [r for r in previews if r.ok and (r.total_cents or 0) > max_per_order_cents]
     if over:
         names = ", ".join(f"{r.name} ({r.total_display})" for r in over)
