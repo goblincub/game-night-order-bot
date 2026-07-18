@@ -9,11 +9,23 @@ together instead of scattered — no stagger engine needed.
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Optional
 
 import dd_cli
+import menu_order
 from roster import Participant
+
+
+def _build_cart(p: Participant) -> str:
+    """Build this person's cart, reorder-mode or fresh-mode. Returns cart_uuid."""
+    if p.order_uuid:
+        return dd_cli.reorder(p.order_uuid, p.store_id)
+    if p.items_json:
+        dd_cli.clear_store_carts(p.store_id)
+        return menu_order.add_to_cart(p.store_id, p.menu_id, json.loads(p.items_json))
+    raise dd_cli.DDError(f"{p.name} has no order set")
 
 
 @dataclass
@@ -50,7 +62,7 @@ def preview_all(people: list[Participant]) -> tuple[list[PersonResult], int]:
         for p in people:
             try:
                 dd_cli.set_default_address(p.address_id)
-                cart = dd_cli.reorder(p.order_uuid, p.store_id)
+                cart = _build_cart(p)
                 prev = dd_cli.preview(cart)
                 dd_cli.cart_delete(cart)  # don't hold carts across address flips
                 # Sanity: the preview address should be this person's address.
@@ -126,7 +138,7 @@ def place_all(
         for p in people:
             try:
                 dd_cli.set_default_address(p.address_id)
-                cart = dd_cli.reorder(p.order_uuid, p.store_id)
+                cart = _build_cart(p)
                 prev = dd_cli.preview(cart)
                 res = dd_cli.submit(
                     prev,

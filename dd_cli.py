@@ -116,6 +116,8 @@ def list_addresses() -> list[dict]:
                 "printable": a.get("printable_address", ""),
                 "city": a.get("city", ""),
                 "zip": a.get("zip_code", ""),
+                "lat": a.get("lat"),
+                "lng": a.get("lng"),
                 "is_default": bool(a.get("is_default")),
             }
         )

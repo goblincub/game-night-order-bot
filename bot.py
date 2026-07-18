@@ -20,6 +20,7 @@ from discord.ext import commands
 import config
 import dd_cli
 import group
+import menu_order
 import roster
 
 INTENTS = discord.Intents.default()
@@ -311,6 +312,105 @@ async def gamenight(ctx: commands.Context, *, when: str = ""):
             await ctx.send(f"⚠️ Couldn't build the group order: {exc}")
             return
     await ctx.send(embed=_group_embed(results, grand, arrival_label), view=GroupConfirmView(people, arrival_iso, arrival_label))
+
+
+# --- ordering fresh food for real friends -------------------------------------
+# One in-progress "order for X" session at a time (single-owner bot).
+_SESSION: dict = {}
+
+
+@bot.command(name="add_friend")
+async def add_friend(ctx: commands.Context, name: str, *, address_search: str = ""):
+    if not _is_owner(ctx.author.id):
+        return
+    if not address_search:
+        await ctx.send("Usage: `!add_friend <name> <part of their saved address>` "
+                       "(the address must already be saved in your DoorDash app).")
+        return
+    addr = await asyncio.to_thread(roster.match_saved_address, address_search)
+    if not addr:
+        await ctx.send(f"No saved address matching “{address_search}”. Add it in the DoorDash app first.")
+        return
+    await asyncio.to_thread(roster.add_friend, name, addr)
+    await ctx.send(f"✅ Linked **{name}** to {addr['printable']}.\nNow pick their food: `!order_for {name} <food>`")
+
+
+@bot.command(name="order_for")
+async def order_for(ctx: commands.Context, name: str, *, food: str = ""):
+    if not _is_owner(ctx.author.id):
+        return
+    p = roster.get(name)
+    if not p:
+        await ctx.send(f"No friend named {name}. Add them first: `!add_friend {name} <address>`")
+        return
+    if not food:
+        await ctx.send(f"Usage: `!order_for {name} <food>` (e.g. `!order_for {name} pizza`)")
+        return
+    async with ctx.typing():
+        addr = next((a for a in await asyncio.to_thread(dd_cli.list_addresses)
+                     if a["address_id"] == p.address_id), None)
+        if not addr or addr.get("lat") is None:
+            await ctx.send("Couldn't read that friend's address coordinates.")
+            return
+        stores = await asyncio.to_thread(menu_order.search_stores, food, addr["lat"], addr["lng"])
+        if not stores:
+            await ctx.send(f"No orderable **{food}** places found near {name}. Try another word.")
+            return
+        store = stores[0]
+        menu_id, items = await asyncio.to_thread(menu_order.get_menu, store.store_id)
+    _SESSION[ctx.author.id] = {
+        "friend": p.name, "store": store, "menu_id": menu_id, "items": items,
+        "entries": [], "names": [],
+    }
+    listing = "\n".join(f"**{i+1}.** {it.name}" for i, it in enumerate(items[:20]))
+    more = f"\n_(+{len(items)-20} more)_" if len(items) > 20 else ""
+    await ctx.send(
+        f"🍴 **{store.name}** near {p.name} ({store.distance}, {store.eta}). Menu:\n"
+        f"{listing}{more}\n\nAdd items with `!add_item <number>`, then `!save_order`."
+    )
+
+
+@bot.command(name="add_item")
+async def add_item(ctx: commands.Context, number: int):
+    if not _is_owner(ctx.author.id):
+        return
+    s = _SESSION.get(ctx.author.id)
+    if not s:
+        await ctx.send("Start with `!order_for <name> <food>` first.")
+        return
+    if not 1 <= number <= len(s["items"]):
+        await ctx.send(f"Pick a number between 1 and {len(s['items'])}.")
+        return
+    item = s["items"][number - 1]
+    async with ctx.typing():
+        try:
+            entry = await asyncio.to_thread(
+                menu_order.build_item_entry, s["store"].store_id, s["menu_id"], item
+            )
+        except dd_cli.DDError as exc:
+            await ctx.send(f"⚠️ Couldn't add {item.name}: {exc}")
+            return
+    s["entries"].append(entry)
+    s["names"].append(item.name)
+    await ctx.send(f"➕ Added **{item.name}** to {s['friend']}'s order. "
+                   f"So far: {', '.join(s['names'])}.\nMore `!add_item`, or `!save_order` when done.")
+
+
+@bot.command(name="save_order")
+async def save_order(ctx: commands.Context):
+    if not _is_owner(ctx.author.id):
+        return
+    s = _SESSION.get(ctx.author.id)
+    if not s or not s["entries"]:
+        await ctx.send("Nothing to save yet. Use `!order_for` then `!add_item`.")
+        return
+    await asyncio.to_thread(
+        roster.set_fresh_order, s["friend"], s["store"].store_id, s["store"].name, s["menu_id"], s["entries"]
+    )
+    names = ", ".join(s["names"])
+    del _SESSION[ctx.author.id]
+    await ctx.send(f"💾 Saved **{s['friend']}**'s order ({names}) from {s['store'].name}.\n"
+                   f"Add more friends, or run `!gamenight 8pm` to place everything.")
 
 
 @bot.event
