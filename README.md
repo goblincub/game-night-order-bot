@@ -30,6 +30,43 @@ Type these in your Discord server.
 
 ---
 
+## 🧑‍🤝‍🧑 Ordering for real friends (example: Mary and Jane)
+
+Say you want to feed two friends, **Mary** and **Jane**, on game night. You don't have
+their addresses and you don't know what they want to eat yet. Here's the whole flow.
+
+### You need two things from each friend
+
+**1. Their delivery address.**
+The bot can only deliver to addresses that are **saved in YOUR DoorDash account**
+(it can't add new ones itself). So:
+- Text Mary and Jane: *"what's your address for food delivery?"*
+- Open the **DoorDash app** → **Account** → **Addresses** → **Add Address**.
+- Add Mary's address, then Jane's. Now they're saved and the bot can use them.
+
+**2. What they want to eat.**
+This bot **re-orders food that's been ordered before**, like a "get the usual" button.
+Mary and Jane are new, so they don't have a "usual" yet. The first time, their order
+has to be placed once:
+- Ask them: *"what do you want for game night?"* (say Mary wants a Chipotle bowl)
+- Place that order to Mary's address one time. Now it's in your order history.
+- From then on, that's **Mary's usual**, and the bot can reorder it automatically every
+  game night. Same for Jane.
+
+### After that, game night is one command
+
+Once Mary and Jane each have an address saved and one past order, you just type:
+```
+!gamenight 8pm
+```
+The bot orders Mary's usual to Mary's house and Jane's usual to Jane's house, both timed
+to arrive at 8pm. You review the total, tap ✅, and everyone eats together.
+
+> 💡 Short version: **save each friend's address in the DoorDash app once, place their
+> first order once, and after that the bot handles every game night for you.**
+
+---
+
 ## 🛠️ Setup (about 10 minutes, one time)
 
 **1. Get the code**
