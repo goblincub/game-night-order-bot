@@ -19,6 +19,14 @@ Type these in your Discord server.
 | `!usual` | Reorders your last order, shows the price, then you tap ✅ to place it |
 | `!order 3` | Reorders a specific one from the `!recent` list |
 
+### Set up a real friend
+| Command | What it does |
+|---|---|
+| `!add_friend Jane iberville` | Links a friend named Jane to a saved address (matches on part of the address) |
+| `!order_for Jane pizza` | Searches restaurants near Jane's place and shows a menu |
+| `!add_item 3` | Adds menu item #3 to Jane's order (sizes and required choices auto-filled) |
+| `!save_order` | Saves Jane's order so game night can place it |
+
 ### Game night (a group)
 | Command | What it does |
 |---|---|
@@ -32,38 +40,37 @@ Type these in your Discord server.
 
 ## 🧑‍🤝‍🧑 Ordering for real friends (example: Mary and Jane)
 
-Say you want to feed two friends, **Mary** and **Jane**, on game night. You don't have
-their addresses and you don't know what they want to eat yet. Here's the whole flow.
+Say you want to feed two friends, **Mary** and **Jane**, on game night. Here's the whole flow.
 
-### You need two things from each friend
-
-**1. Their delivery address.**
-The bot can only deliver to addresses that are **saved in YOUR DoorDash account**
-(it can't add new ones itself). So:
+### Step 1: Save their addresses (once)
+The bot can only deliver to addresses **saved in YOUR DoorDash account** (it can't add
+new ones itself). So:
 - Text Mary and Jane: *"what's your address for food delivery?"*
 - Open the **DoorDash app** → **Account** → **Addresses** → **Add Address**.
-- Add Mary's address, then Jane's. Now they're saved and the bot can use them.
+- Add Mary's address, then Jane's.
 
-**2. What they want to eat.**
-This bot **re-orders food that's been ordered before**, like a "get the usual" button.
-Mary and Jane are new, so they don't have a "usual" yet. The first time, their order
-has to be placed once:
-- Ask them: *"what do you want for game night?"* (say Mary wants a Chipotle bowl)
-- Place that order to Mary's address one time. Now it's in your order history.
-- From then on, that's **Mary's usual**, and the bot can reorder it automatically every
-  game night. Same for Jane.
+### Step 2: Link them and pick their food in Discord
+```
+!add_friend Mary main street
+!order_for Mary sushi
+!add_item 2
+!save_order
+```
+`!add_friend` links Mary to her saved address (matching on part of it). `!order_for`
+searches restaurants near **her** house and shows a menu. `!add_item` adds what she wants
+(sizes and required choices are filled in automatically). `!save_order` locks it in.
 
-### After that, game night is one command
+Repeat for Jane. You can add yourself too (`!add_friend Me sun stone`).
 
-Once Mary and Jane each have an address saved and one past order, you just type:
+### Step 3: Game night is one command
 ```
 !gamenight 8pm
 ```
-The bot orders Mary's usual to Mary's house and Jane's usual to Jane's house, both timed
-to arrive at 8pm. You review the total, tap ✅, and everyone eats together.
+The bot builds Mary's order to Mary's house and Jane's order to Jane's house, shows you
+the total, and schedules them both for 8pm. You tap ✅, and everyone eats together.
 
-> 💡 Short version: **save each friend's address in the DoorDash app once, place their
-> first order once, and after that the bot handles every game night for you.**
+> 💡 It works even across cities (or countries): the bot searches restaurants near each
+> person and checks DoorDash can actually deliver there before it lets you place anything.
 
 ---
 
