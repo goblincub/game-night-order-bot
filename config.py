@@ -49,6 +49,8 @@ OWNER_ID: int = _int("OWNER_ID", 0)
 # Safety gates. DRY_RUN defaults to TRUE — going live must be a deliberate choice.
 DRY_RUN: bool = _bool("DRY_RUN", True)
 MAX_PER_ORDER_CENTS: int = _int("MAX_PER_ORDER_CENTS", 2500)
+# Cap on the WHOLE game-night order (sum of everyone's). Over it -> nothing placed.
+MAX_PER_NIGHT_CENTS: int = _int("MAX_PER_NIGHT_CENTS", 12000)
 TIP_CENTS: int = _int("TIP_CENTS", 0)
 
 
@@ -56,7 +58,8 @@ def summary() -> str:
     """Human-readable config summary (never prints the token)."""
     return (
         f"DRY_RUN={DRY_RUN} | MAX_PER_ORDER=${MAX_PER_ORDER_CENTS/100:.2f} | "
-        f"TIP=${TIP_CENTS/100:.2f} | OWNER_ID={'set' if OWNER_ID else 'MISSING'} | "
+        f"MAX_PER_NIGHT=${MAX_PER_NIGHT_CENTS/100:.2f} | TIP=${TIP_CENTS/100:.2f} | "
+        f"OWNER_ID={'set' if OWNER_ID else 'MISSING'} | "
         f"TOKEN={'set' if DISCORD_TOKEN else 'MISSING'}"
     )
 

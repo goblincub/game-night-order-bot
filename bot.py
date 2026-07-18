@@ -11,12 +11,16 @@ Run:  caffeinate -i python bot.py
 from __future__ import annotations
 
 import asyncio
+import datetime
+import re
 
 import discord
 from discord.ext import commands
 
 import config
 import dd_cli
+import group
+import roster
 
 INTENTS = discord.Intents.default()
 INTENTS.message_content = True  # needed to read command text
@@ -158,6 +162,155 @@ async def order(ctx: commands.Context, number: int):
         await ctx.send(f"Pick a number between 1 and {len(orders)} (see `!recent`).")
         return
     await _preview_and_ask(ctx, orders[number - 1])
+
+
+# --- game-night group ordering ------------------------------------------------
+def _parse_arrival(text: str) -> tuple[str | None, str]:
+    """'8pm' / '8:30pm' / '20:00' -> (UTC ISO string, friendly label).
+
+    Returns (None, 'as soon as possible') if no/invalid time. Times in the past
+    today roll to tomorrow.
+    """
+    text = (text or "").strip().lower()
+    m = re.match(r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$", text)
+    if not m:
+        return None, "as soon as possible"
+    hour, minute, ap = int(m.group(1)), int(m.group(2) or 0), m.group(3)
+    if ap == "pm" and hour != 12:
+        hour += 12
+    if ap == "am" and hour == 12:
+        hour = 0
+    now = datetime.datetime.now().astimezone()
+    target = now.replace(hour=hour % 24, minute=minute, second=0, microsecond=0)
+    if target <= now:
+        target += datetime.timedelta(days=1)
+    iso = target.astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return iso, target.strftime("%I:%M %p").lstrip("0")
+
+
+def _group_embed(results: list[group.PersonResult], grand: int, arrival_label: str) -> discord.Embed:
+    color = discord.Color.orange() if config.DRY_RUN else discord.Color.green()
+    e = discord.Embed(title="🎮 Game Night order", color=color)
+    e.description = f"🕒 Everyone's food targets **{arrival_label}**"
+    for r in results:
+        if r.ok:
+            where = r.address.split(",")[0] if r.address else "?"
+            body = "\n".join(f"• {i}" for i in r.items[:4]) or "—"
+            e.add_field(
+                name=f"{r.name} — {r.store_name} · {r.total_display}",
+                value=f"{body}\n📍 {where}{('  ' + r.note) if r.note else ''}",
+                inline=False,
+            )
+        else:
+            e.add_field(name=f"{r.name} — ⚠️ problem", value=r.note[:200], inline=False)
+    e.add_field(name="Grand total", value=f"**${grand/100:.2f}** (payer pays; friends settle up)", inline=False)
+    e.set_footer(
+        text="DRY RUN — tapping ✅ only simulates, no charge."
+        if config.DRY_RUN
+        else "⚠️ LIVE — tapping ✅ places ALL these real orders and charges your card."
+    )
+    return e
+
+
+class GroupConfirmView(discord.ui.View):
+    def __init__(self, people, arrival_iso, arrival_label):
+        super().__init__(timeout=180)
+        self.people = people
+        self.arrival_iso = arrival_iso
+        self.arrival_label = arrival_label
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if not _is_owner(interaction.user.id):
+            await interaction.response.send_message("Only the payer can confirm.", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(label="✅ Place all", style=discord.ButtonStyle.success)
+    async def place(self, interaction: discord.Interaction, button: discord.ui.Button):
+        for child in self.children:
+            child.disabled = True
+        await interaction.response.edit_message(view=self)
+        try:
+            results, grand = await asyncio.to_thread(
+                group.place_all,
+                self.people,
+                dry_run=config.DRY_RUN,
+                max_per_order_cents=config.MAX_PER_ORDER_CENTS,
+                max_per_night_cents=config.MAX_PER_NIGHT_CENTS,
+                scheduled_time=self.arrival_iso,
+                tip_cents=config.TIP_CENTS,
+            )
+        except dd_cli.MoneyGateError as exc:
+            await interaction.followup.send(f"🛑 {exc}")
+            return
+        # Settlement (spec §9)
+        lines = []
+        for r in results:
+            if not r.ok:
+                lines.append(f"⚠️ {r.name}: {r.note[:80]}")
+            elif config.DRY_RUN:
+                lines.append(f"• {r.name} owes **{r.total_display}** _(dry run — not placed)_")
+            else:
+                lines.append(f"✅ {r.name}: **{r.total_display}** placed → {r.store_name}")
+        header = (
+            "🧾 **(dry run)** Would have placed these — flip `DRY_RUN=false` to go live:"
+            if config.DRY_RUN
+            else f"🎉 Orders placed! Targeting {self.arrival_label}. Everyone owes the payer:"
+        )
+        await interaction.followup.send(header + "\n" + "\n".join(lines) + f"\n**Total: ${grand/100:.2f}**")
+        self.stop()
+
+    @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.danger)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        for child in self.children:
+            child.disabled = True
+        await interaction.response.edit_message(view=self)
+        await interaction.followup.send("❌ Game night cancelled. Nothing placed.")
+        self.stop()
+
+
+@bot.command(name="setup_demo")
+async def setup_demo(ctx: commands.Context, size: int = 3):
+    if not _is_owner(ctx.author.id):
+        return
+    async with ctx.typing():
+        try:
+            people = await asyncio.to_thread(roster.build_demo_roster, size)
+        except Exception as exc:  # noqa: BLE001 — surface any setup failure to the user
+            await ctx.send(f"⚠️ Couldn't build a demo roster: {exc}")
+            return
+    lines = [f"**{p.name}** → {p.address_label.split(',')[0]} · usual: {p.store_name}" for p in people]
+    await ctx.send("🎮 Demo roster ready (your own saved addresses as pretend friends):\n" + "\n".join(lines) + "\n\nNow try `!gamenight 8pm`.")
+
+
+@bot.command(name="roster")
+async def show_roster(ctx: commands.Context):
+    if not _is_owner(ctx.author.id):
+        return
+    people = roster.load_roster()
+    if not people:
+        await ctx.send("No roster yet. Run `!setup_demo` first.")
+        return
+    lines = [f"**{p.name}** → {p.address_label.split(',')[0]} · usual: {p.store_name}" for p in people]
+    await ctx.send("🎮 **Roster:**\n" + "\n".join(lines))
+
+
+@bot.command(name="gamenight")
+async def gamenight(ctx: commands.Context, *, when: str = ""):
+    if not _is_owner(ctx.author.id):
+        return
+    people = roster.load_roster()
+    if not people:
+        await ctx.send("No roster yet. Run `!setup_demo` first.")
+        return
+    arrival_iso, arrival_label = _parse_arrival(when)
+    async with ctx.typing():
+        try:
+            results, grand = await asyncio.to_thread(group.preview_all, people)
+        except dd_cli.DDError as exc:
+            await ctx.send(f"⚠️ Couldn't build the group order: {exc}")
+            return
+    await ctx.send(embed=_group_embed(results, grand, arrival_label), view=GroupConfirmView(people, arrival_iso, arrival_label))
 
 
 @bot.event

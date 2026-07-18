@@ -102,6 +102,43 @@ class Preview:
     fees: list[tuple[str, str]] = field(default_factory=list)  # (label, amount)
 
 
+# --- addresses ----------------------------------------------------------------
+def list_addresses() -> list[dict]:
+    """All saved addresses: [{address_id, printable, city, zip, is_default}, ...]."""
+    data = _run(["address", "list"])
+    out = []
+    for a in data.get("addresses", []) or []:
+        out.append(
+            {
+                "address_id": str(a.get("address_id", "")),
+                "printable": a.get("printable_address", ""),
+                "city": a.get("city", ""),
+                "zip": a.get("zip_code", ""),
+                "is_default": bool(a.get("is_default")),
+            }
+        )
+    return out
+
+
+def get_default_address() -> Optional[dict]:
+    """The currently-default saved address, or None."""
+    for a in list_addresses():
+        if a["is_default"]:
+            return a
+    return None
+
+
+def set_default_address(address_id: str) -> None:
+    """Change the account-wide default delivery address.
+
+    This is a GLOBAL mutation — every open cart resolves to this address. The
+    group engine flips it right before each order and MUST restore it after.
+    """
+    if not address_id:
+        raise DDError("set_default_address: empty address_id")
+    _run(["address", "set", "--address-id", address_id, "--yes"])
+
+
 # --- read-only, free operations ----------------------------------------------
 def order_history(limit: int = 10) -> list[PastOrder]:
     data = _run(["order", "history"])
